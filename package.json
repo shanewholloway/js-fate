@@ -1,0 +1,18 @@
+{
+  "name": "fate",
+  "version": "0.0.1",
+  "license": "MIT",
+  "description": "Futures, Promises and Deferreds",
+  "keywords": [ "future", "promise", "deferred" ],
+  "author": "Shane Holloway <shane@techgame.net>",
+  "readmeFilename": "README.md",
+
+  "repository": {
+      "type":"git",
+      "url": "https://github.com/shanewholloway/fate.git"},
+
+  "main": "fate.js",
+  "scripts": {
+    "test": "node testFate.js"
+  }
+}
