@@ -64,7 +64,7 @@ function thenable(thisArg, success, failure, inner) {
             failure = success.failure || success.reject || success.fail;
         success = success.success || success.resolve || success.done;
     }
-    if (success===undefined && success===undefined)
+    if (success===undefined && failure===undefined)
         return Future.deferred(thisArg)
     else return new Future(then, resolve, reject);
 
