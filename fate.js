@@ -18,9 +18,13 @@ Promise.api = {
     always: function(always) { return this.then(always, always) },
     done: function(success) { return this.then(success, undefined) },
     fail: function(failure) { return this.then(undefined, failure) },
+    thenCall: function(callback) { // chain to node-style callback(err, ans)
+        return this.then(callback.bind(this,null), callback.bind(this)) },
     timeout: function(ms) { return Promise.timeout(this, ms) } }
 Promise.prototype = Object.create(Promise.api,
-    {promise: {get: function(){return this}}})
+    {promise: {get: function(){return this}}
+    ,state: {get: function(){return this.then.state}}
+    })
 
 exports.isPromise = Promise.isPromise = isPromise
 function isPromise(tgt) {
@@ -45,7 +49,11 @@ function Future(then, resolve, reject) {
         this.reject = reject
 }
 Future.prototype = Object.create(Promise.api,
-    {then: {get: function(){return this.promise.then}}})
+    {then: {get: function(){return this.promise.then}}
+    ,state: {get: function(){return this.promise.state}}
+    ,callback: {get: function(){ var self=this; // lazy-bind node-style callback
+      return function(err,ans){ return err ? self.reject(err) : self.resolve(ans) }}}
+    })
 Future.prototype.resolve = function(result) { }
 Future.prototype.reject = function(error) { }
 
@@ -73,6 +81,7 @@ function thenable(thisArg, success, failure, inner) {
             inner = Future.deferred(thisArg)
         return inner.then(success, failure) }
     function resolve(result) {
+        then.state = true
         var next = (inner!==undefined) ? inner : Future.absentTail
         if (success!==undefined)
             try {
@@ -88,6 +97,7 @@ function thenable(thisArg, success, failure, inner) {
         inner = Future.resolved(result)
         return next.resolve(result) }
     function reject(error) {
+        then.state = false
         var next = (inner!==undefined) ? inner : Future.absentTail
         if (failure!==undefined)
             try {
@@ -113,6 +123,7 @@ function deferred(thisArg) {
         actions.push(ans)
         return ans.promise }
     function resolve(result) {
+        then.state = true
         if (actions===undefined) return;
         inner = Future.resolved(result, thisArg)
         for (var i=0; i<actions.length; i++) {
@@ -122,6 +133,7 @@ function deferred(thisArg) {
             } catch (err) { Future.onActionError(err, thisArg) }
         } actions = undefined }
     function reject(error) {
+        then.state = false
         if (actions===undefined) return
         inner = Future.rejected(error, thisArg)
         for (var i=0; i<actions.length; i++) {
@@ -134,15 +146,19 @@ function deferred(thisArg) {
 
 exports.resolved = Future.resolved = resolved
 function resolved(result, thisArg) {
-    return new Future(function then(success, failure) {
+    then.state = true
+    return new Future(then)
+    function then(success, failure) {
         var ans = thenable(thisArg, success, failure)
-        return ans.resolve(result), ans.promise })}
+        return ans.resolve(result), ans.promise }}
 
 exports.rejected = Future.rejected = rejected
 function rejected(error, thisArg) {
-    return new Future(function then(success, failure) {
+    then.state = false
+    return new Future(then)
+    function then(success, failure) {
         var ans = thenable(thisArg, success, failure)
-        return ans.reject(error), ans.promise })}
+        return ans.reject(error), ans.promise }}
 
 
 //~ Utility Futures: invert, delay and timeout ~~~~~~~~~~~~~~

@@ -9,7 +9,7 @@ function fail(msg, ans) {
     console.log('    ', "RAISING ERROR", err, ans);
     throw err; }
 
-var p = require('./fate.js');
+var fate = require('./fate.js'), p = fate;
 
 function testFuture(aVar) {
     var n,p
@@ -177,4 +177,39 @@ if (0) {
     f1.timeout(200).then(
         function(){ say('fail f1') },
         function(){ say('success f1') })
+}
+
+if (1) {
+    var d_err, d_ans
+
+    d_err = fate.deferred()
+    d_err.thenCall(function(err, ans) {
+        if (err) console.log('successfully received err', err)
+        else console.log('FAIL did not receive err')
+    })
+    d_err.reject(new Error('A successful error'))
+
+    d_ans = fate.deferred()
+    d_ans.thenCall(function(err, ans) {
+        console.log("resolve:", [].concat(arguments))
+        if (err) console.log('FAIL received unexpected err')
+        if (ans) console.log('successfully received ans', ans)
+        else console.log('FAIL received invalid ans', ans)
+    })
+    d_ans.resolve(1942)
+}
+
+if (1) {
+    var fs = require('fs'), d_err, d_ans;
+
+    d_ans = fate.deferred()
+    d_ans.done(function(ans) { console.log('success', !!ans) })
+         .fail(function(err) { console.log('FAIL', err) })
+
+    d_err = fate.deferred()
+    d_err.done(function(ans) { console.log('FAIL', !!ans) })
+         .fail(function(err) { console.log('success', !!err) })
+
+    fs.stat('./fate.js', d_ans.callback)
+    fs.stat('./-does-not-exist-.dne', d_err.callback)
 }
