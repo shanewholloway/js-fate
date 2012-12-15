@@ -20,7 +20,9 @@ Promise.api = {
     fail: function(failure) { return this.then(undefined, failure) },
     thenCall: function(callback) { // chain to node-style callback(err, ans)
         return this.then(callback.bind(this,null), callback.bind(this)) },
-    timeout: function(ms) { return Promise.timeout(this, ms) } }
+    timeout: function(ms) { return Promise.timeout(this, ms) },
+    thenLog: function(opt) { return thenLog(this, opt) }
+}
 Promise.prototype = Object.create(Promise.api,
     {promise: {get: function(){return this}}
     ,state: {get: function(){return this.then.state}}
@@ -40,6 +42,8 @@ function when(tgt, success, failure) {
         return asPromise(tgt).then(success, failure)
     else return asPromise(tgt) }
 
+var slice = Array.prototype.slice
+
 exports.Future = Future
 function Future(then, resolve, reject) {
     this.promise = new Promise(then)
@@ -52,7 +56,9 @@ Future.prototype = Object.create(Promise.api,
     {then: {get: function(){return this.promise.then}}
     ,state: {get: function(){return this.promise.state}}
     ,callback: {get: function(){ var self=this; // lazy-bind node-style callback
-      return function(err,ans){ return err ? self.reject(err) : self.resolve(ans) }}}
+      return function(err, ans){
+          return err ? self.reject(err)
+            : self.resolve.apply(self, slice.call(arguments, 1)); }}}
     })
 Future.prototype.resolve = function(result) { }
 Future.prototype.reject = function(error) { }
@@ -76,40 +82,46 @@ function thenable(thisArg, success, failure, inner) {
         return Future.deferred(thisArg)
     else return new Future(then, resolve, reject)
 
+    function argsAsArray(args) {
+        return args instanceof Array ? args : [args] }
     function then(success, failure) {
         if (inner===undefined)
             inner = Future.deferred(thisArg)
         return inner.then(success, failure) }
-    function resolve(result) {
+    function resolve() {
         then.state = true
-        var next = (inner!==undefined) ? inner : Future.absentTail
+        var resultVec = arguments,
+            next = (inner!==undefined) ? inner : Future.absentTail
         if (success!==undefined)
             try {
-                var res = success.call(thisArg, result)
-                if (res!==undefined) result = res
+                var res = success.apply(thisArg, resultVec)
+                if (res!==undefined)
+                    resultVec = argsAsArray(res)
             } catch (err) {
                 success = failure = undefined
-                inner = Future.rejected(err)
+                inner = Future.rejected(err, thisArg)
                 return next.reject(err)
             }
         else if (failure===undefined) return
         success = failure = undefined
-        inner = Future.resolved(result)
-        return next.resolve(result) }
-    function reject(error) {
+        inner = Future.resolved(resultVec, thisArg, true)
+        return next.resolve.apply(next, resultVec) }
+    function reject() {
         then.state = false
-        var next = (inner!==undefined) ? inner : Future.absentTail
+        var errorVec = arguments,
+            next = (inner!==undefined) ? inner : Future.absentTail
         if (failure!==undefined)
             try {
-                var res = failure.call(thisArg, error)
-                if (res!==undefined) error = res
-            } catch (err) { error = err }
+                var res = failure.apply(thisArg, errorVec)
+                if (res!==undefined)
+                    errorVec = argsAsArray(res)
+            } catch (err) { errorVec = [err] }
         else if (success===undefined) return;
         success = failure = undefined
-        inner = Future.rejected(error)
-        return next.reject(error) } }
+        inner = Future.rejected(errorVec, thisArg, true)
+        return next.reject.apply(next, errorVec) } }
 
-Future.absentTail = {resolve: function(result) {}, reject: function(error) {}}
+Future.absentTail = {resolve: function() {}, reject: function() {}}
 Future.onActionError = function(error, thisArg) { console.error(error) }
 
 exports.deferred = Future.deferred = deferred
@@ -122,43 +134,49 @@ function deferred(thisArg) {
         var ans = Future.thenable(thisArg, success, failure)
         actions.push(ans)
         return ans.promise }
-    function resolve(result) {
+    function resolve() {
         then.state = true
         if (actions===undefined) return;
-        inner = Future.resolved(result, thisArg)
+        var resultVec = arguments
+        inner = Future.resolved(resultVec, thisArg, true)
         for (var i=0; i<actions.length; i++) {
             var ea = actions[i].resolve
             if (ea===undefined) continue
-            try { ea.call(thisArg, result)
+            try { ea.apply(thisArg, resultVec)
             } catch (err) { Future.onActionError(err, thisArg) }
         } actions = undefined }
-    function reject(error) {
+    function reject() {
         then.state = false
         if (actions===undefined) return
-        inner = Future.rejected(error, thisArg)
+        var errorVec = arguments
+        inner = Future.rejected(errorVec, thisArg, true)
         for (var i=0; i<actions.length; i++) {
             var ea = actions[i].reject
             if (ea===undefined) continue
-            try { ea.call(thisArg, error)
+            try { ea.apply(thisArg, errorVec)
             } catch (err) { Future.onActionError(err, thisArg) }
         } actions = undefined }
 }
 
 exports.resolved = Future.resolved = resolved
-function resolved(result, thisArg) {
+function resolved(result, thisArg, inVecForm) {
+    if (!inVecForm) result = [result]
+    else result = slice.call(result, 0)
     then.state = true
     return new Future(then)
     function then(success, failure) {
         var ans = thenable(thisArg, success, failure)
-        return ans.resolve(result), ans.promise }}
+        return ans.resolve.apply(ans, result), ans.promise }}
 
 exports.rejected = Future.rejected = rejected
-function rejected(error, thisArg) {
+function rejected(error, thisArg, inVecForm) {
+    if (!inVecForm) error = [error]
+    else error = slice.call(error, 0)
     then.state = false
     return new Future(then)
     function then(success, failure) {
         var ans = thenable(thisArg, success, failure)
-        return ans.reject(error), ans.promise }}
+        return ans.reject.apply(ans, error), ans.promise }}
 
 
 //~ Utility Futures: invert, delay and timeout ~~~~~~~~~~~~~~
@@ -179,6 +197,19 @@ function timeout(target, ms, bReject) {
     when(target, res)
     return res }
 
+exports.thenLog = thenLog
+function thenLog(target, opt) {
+    if (!opt) opt = {}
+    var log = opt.log || console.log,
+        s = opt.success || 'success',
+        f = opt.failure || 'failure'
+
+    if (!opt.showArgs && opt.showArgs!==undefined)
+        target.then(function(){log(s)}, function(){log(f)})
+    else target.then(
+        function(){log(s+': ', slice.call(arguments, 0).join(', '))},
+        function(){log(f+': ', slice.call(arguments, 0).join(', '))})
+    return target /* don't chain for logging */ }
 
 //~ Compositions: any, all, every, first ~~~~~~~~~~~~~~~~~~~~
 function forEachPromise(anArray, thisArg, resolveFirst, rejectFirst, rejectAll) {
