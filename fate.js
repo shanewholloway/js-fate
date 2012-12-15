@@ -65,16 +65,18 @@ Future.prototype.reject = function(error) { }
 
 exports.isFuture = Future.isFuture = isFuture
 function isFuture(tgt) {
-  return (tgt!==undefined) && (isFunction(tgt.resolve) || isFunction(tgt.reject))}
-function isFunction(a) { return 'function'===typeof a }
+  if (tgt===undefined) return false;
+  return (typeof tgt.resolve==='function') || (typeof tgt.reject==='function') }
 
 //~ Future: thenable, deferred, resolved and rejected ~~~~~~~
 exports.thenable = Future.thenable = thenable
+thenable.unpack = function(obj, failure) { return {
+  success: obj.success || obj.resolve,
+  failure: failure || obj.failure || obj.reject} }
 function thenable(thisArg, success, failure, inner) {
   if (typeof success === "object") {
-    if (failure===undefined)
-      failure = success.failure || success.reject || success.fail
-    success = success.success || success.resolve || success.done
+    var obj = thenable.unpack(obj=success, failure)
+    failure = obj.failure; success = obj.success
   }
   if (success===undefined && failure===undefined)
     return Future.deferred(thisArg)

@@ -1,6 +1,6 @@
 {
   "name": "fate",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "license": "MIT",
   "description": "Futures, Promises and Deferreds",
   "keywords": [ "future", "promise", "deferred" ],
