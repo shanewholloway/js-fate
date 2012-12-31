@@ -212,37 +212,48 @@ function thenLog(target, opt) {
   return target /* don't chain for logging */ }
 
 //~ Compositions: any, all, every, first ~~~~~~~~~~~~~~~~~~~~
-function forEachPromise(anArray, thisArg, resolveFirst, rejectFirst, rejectAll) {
-  var n=0, future=deferred(thisArg), linchpin={
-    push: function(ea) {
-      if (isPromise(ea)) {
-        ++n; ea.then(linchpin)
-      } else if (resolveFirst)
-        future.resolve(anArray)
-      return ea },
-    resolve: function() {
-      if (resolveFirst || (--n < 1))
-        future.resolve(anArray) },
-    reject: function() {
-      if (rejectFirst || (--n < 1))
-        future.reject(anArray)
-      if (rejectAll)
-        future.resolve = future.reject } }
-
-  ;[].forEach.call(anArray, linchpin.push)
-  if (n<1) future.resolve(n)
-  return future }
+function forEachPromise(anArray, step) {
+  var i,c=0,n=anArray.length
+  for(i=0; i<n; ++i)
+    if (!isPromise(anArray[i]))
+      step(true, ++c, n)
+    else anArray[i].then(
+      function() {step(true, ++c, n)},
+      function() {step(false, ++c, n)})
+  if (n<=0) step(undefined, true, 0, n) }
 
 exports.every = Future.every = Promise.every = every
 function every(anArray, thisArg) {
-  return forEachPromise(anArray, thisArg, false, false, true) }
+  var future=Future.deferred(thisArg), state=true
+  forEachPromise(anArray, function(ea_state, i, n) {
+    state = state || ea_state
+    if (i<n) return
+    else if (state)
+      future.resolve({i:i,n:n})
+    else future.reject({i:i,n:n}) })
+  return future.promise }
+
 exports.all = Future.all = Promise.all = all
 function all(anArray, thisArg) {
-  return forEachPromise(anArray, thisArg, false, true) }
+  var future=Future.deferred(thisArg)
+  forEachPromise(anArray, function(state, i, n) {
+    if (!state) future.reject({i:i,n:n})
+    else if (i>=n) future.resolve({i:i,n:n}) })
+  return future.promise }
+
 exports.first = Future.first = Promise.first = first
 function first(anArray, thisArg) {
-  return forEachPromise(anArray, thisArg, true, true) }
+  var future=Future.deferred(thisArg)
+  forEachPromise(anArray, function(state, i, n) {
+    if (state) future.resolve({i:i,n:n})
+    else future.reject({i:i,n:n}) })
+  return future.promise }
+
 exports.any = Future.any = Promise.any = any
 function any(anArray, thisArg) {
-  return forEachPromise(anArray, thisArg, true, false) }
+  var future=Future.deferred(thisArg)
+  forEachPromise(anArray, function(state, i, n) {
+    if (state) future.resolve({i:i,n:n})
+    else if (i>=n) future.reject({i:i,n:n}) })
+  return future.promise }
 
