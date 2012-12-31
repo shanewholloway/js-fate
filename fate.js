@@ -30,11 +30,13 @@ Promise.prototype = Object.create(Promise.api,
 
 exports.isPromise = Promise.isPromise = isPromise
 function isPromise(tgt) {
-  return (tgt!==undefined) && (tgt.then!==undefined) }
+  return (tgt!=null) && (tgt.then!=null) }
 
-Promise.wrap = function(tgt) {
-  return isPromise(tgt) ? tgt
-    : Promise._valueAsPromise(tgt) }
+exports.asPromise = Promise.wrap = asPromise
+function asPromise(tgt) {
+  if (tgt==null || tgt.promise==null)
+      tgt = Future.resolved(tgt)
+  return tgt.promise }
 
 exports.when = Promise.when = when
 function when(tgt, success, failure) {
@@ -165,8 +167,6 @@ function resolved(result, thisArg, inVecForm) {
   function then(success, failure) {
     var ans = thenable(thisArg, success, failure)
     return ans.resolve.apply(ans, result), ans.promise }}
-Promise._valueAsPromise = function(tgt) {
-  return Future.resolved(tgt).promise }
 
 exports.rejected = Future.rejected = rejected
 function rejected(error, thisArg, inVecForm) {
