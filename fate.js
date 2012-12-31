@@ -29,8 +29,8 @@ Promise.prototype = Object.create(Promise.api,
   })
 
 exports.isPromise = Promise.isPromise = isPromise
-function isPromise(tgt) {
-  return (tgt!=null) && (tgt.then!=null) }
+function isPromise(tgt, orHasPromise) {
+  return (tgt!=null) && tgt.promise!=null && tgt.promise.then!=null }
 
 exports.asPromise = Promise.wrap = asPromise
 function asPromise(tgt) {
@@ -64,11 +64,6 @@ Future.prototype = Object.create(Promise.api,
   })
 Future.prototype.resolve = function(result) { }
 Future.prototype.reject = function(error) { }
-
-exports.isFuture = Future.isFuture = isFuture
-function isFuture(tgt) {
-  if (tgt===undefined) return false;
-  return (typeof tgt.resolve==='function') || (typeof tgt.reject==='function') }
 
 //~ Future: thenable, deferred, resolved and rejected ~~~~~~~
 exports.thenable = Future.thenable = thenable
@@ -183,7 +178,7 @@ function rejected(error, thisArg, inVecForm) {
 exports.inverted = Future.inverted = inverted
 function inverted(tgt) {
   if (tgt===undefined) tgt = deferred()
-  return new Future(tgt.then, tgt.reject, tgt.resolve) }
+  return new Future(tgt.promise.then, tgt.reject, tgt.resolve) }
 
 exports.delay = Future.delay = Promise.delay = delay
 function delay(ms, bReject) {
@@ -192,24 +187,24 @@ function delay(ms, bReject) {
   res.always(function() {clearTimeout(tid)})
   return res }
 exports.timeout = Future.timeout = Promise.timeout = timeout
-function timeout(target, ms, bReject) {
+function timeout(tgt, ms, bReject) {
   var res = delay(ms, (bReject!=undefined?bReject:true))
-  when(target, res)
+  when(tgt, res)
   return res }
 
 exports.thenLog = thenLog
-function thenLog(target, opt) {
+function thenLog(tgt, opt) {
   if (!opt) opt = {}
   var log = opt.log || console.log,
       s = opt.success || 'success',
       f = opt.failure || 'failure'
 
   if (!opt.showArgs && opt.showArgs!==undefined)
-    target.then(function(){log(s)}, function(){log(f)})
-  else target.then(
+    tgt.promise.then(function(){log(s)}, function(){log(f)})
+  else tgt.promise.then(
     function(){log(s+': ', slice.call(arguments, 0).join(', '))},
     function(){log(f+': ', slice.call(arguments, 0).join(', '))})
-  return target /* don't chain for logging */ }
+  return tgt /* don't chain for logging */ }
 
 //~ Compositions: any, all, every, first ~~~~~~~~~~~~~~~~~~~~
 function forEachPromise(anArray, step) {
@@ -217,7 +212,7 @@ function forEachPromise(anArray, step) {
   for(i=0; i<n; ++i)
     if (!isPromise(anArray[i]))
       step(true, ++c, n)
-    else anArray[i].then(
+    else anArray[i].promise.then(
       function() {step(true, ++c, n)},
       function() {step(false, ++c, n)})
   if (n<=0) step(undefined, true, 0, n) }
