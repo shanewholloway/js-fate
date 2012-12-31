@@ -1,6 +1,6 @@
 {
   "name": "fate",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "license": "MIT",
   "description": "Futures, Promises and Deferreds",
   "keywords": [ "future", "promise", "deferred" ],
@@ -9,7 +9,7 @@
 
   "repository": {
       "type":"git",
-      "url": "https://github.com/shanewholloway/fate.git"},
+      "url": "https://github.com/shanewholloway/node-fate.git"},
 
   "main": "fate.js",
   "scripts": {

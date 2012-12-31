@@ -47,9 +47,9 @@ var slice = Array.prototype.slice
 exports.Future = Future
 function Future(then, resolve, reject) {
   this.promise = new Promise(then)
-  if (resolve !== undefined)
+  if (resolve!==undefined)
     this.resolve = resolve
-  if (reject !== undefined)
+  if (reject!==undefined)
     this.reject = reject
 }
 Future.prototype = Object.create(Promise.api,
@@ -74,7 +74,7 @@ thenable.unpack = function(obj, failure) { return {
   success: obj.success || obj.resolve,
   failure: failure || obj.failure || obj.reject} }
 function thenable(thisArg, success, failure, inner) {
-  if (typeof success === "object") {
+  if (typeof success==="object") {
     var obj = thenable.unpack(obj=success, failure)
     failure = obj.failure; success = obj.success
   }
