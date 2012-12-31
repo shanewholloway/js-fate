@@ -32,15 +32,15 @@ exports.isPromise = Promise.isPromise = isPromise
 function isPromise(tgt) {
   return (tgt!==undefined) && (tgt.then!==undefined) }
 
-exports.asPromise = Promise.wrap = asPromise
-function asPromise(tgt) {
-  return isPromise(tgt) ? tgt : Future.resolved(tgt).promise }
+Promise.wrap = function(tgt) {
+  return isPromise(tgt) ? tgt
+    : Promise._valueAsPromise(tgt) }
 
 exports.when = Promise.when = when
 function when(tgt, success, failure) {
   if (success!==undefined || failure!==undefined)
-    return asPromise(tgt).then(success, failure)
-  else return asPromise(tgt) }
+    return Promise.wrap(tgt).then(success, failure)
+  else return Promise.wrap(tgt) }
 
 var slice = Array.prototype.slice
 
@@ -91,7 +91,7 @@ function thenable(thisArg, success, failure, inner) {
   function resolve() {
     then.state = true
     var resultVec = arguments,
-        next = (inner!==undefined) ? inner : Future.absentTail
+        tail = (inner!==undefined) ? inner : Future.absentTail
     if (success!==undefined)
       try {
         var res = success.apply(thisArg, resultVec)
@@ -100,26 +100,24 @@ function thenable(thisArg, success, failure, inner) {
       } catch (err) {
         success = failure = undefined
         inner = Future.rejected(err, thisArg)
-        return next.reject(err)
+        return tail.reject(err)
       }
-    else if (failure===undefined) return
     success = failure = undefined
     inner = Future.resolved(resultVec, thisArg, true)
-    return next.resolve.apply(next, resultVec) }
+    return tail.resolve.apply(tail, resultVec) }
   function reject() {
     then.state = false
     var errorVec = arguments,
-        next = (inner!==undefined) ? inner : Future.absentTail
+        tail = (inner!==undefined) ? inner : Future.absentTail
     if (failure!==undefined)
       try {
         var res = failure.apply(thisArg, errorVec)
         if (res!==undefined)
           errorVec = argsAsArray(res)
       } catch (err) { errorVec = [err] }
-    else if (success===undefined) return;
     success = failure = undefined
     inner = Future.rejected(errorVec, thisArg, true)
-    return next.reject.apply(next, errorVec) } }
+    return tail.reject.apply(tail, errorVec) } }
 
 Future.absentTail = {resolve: function() {}, reject: function() {}}
 Future.onActionError = function(error, thisArg) { console.error(error) }
@@ -167,6 +165,8 @@ function resolved(result, thisArg, inVecForm) {
   function then(success, failure) {
     var ans = thenable(thisArg, success, failure)
     return ans.resolve.apply(ans, result), ans.promise }}
+Promise._valueAsPromise = function(tgt) {
+  return Future.resolved(tgt).promise }
 
 exports.rejected = Future.rejected = rejected
 function rejected(error, thisArg, inVecForm) {
