@@ -1,6 +1,6 @@
 {
   "name": "fate",
-  "version": "0.4.1",
+  "version": "0.5.0",
   "license": "MIT",
   "description": "Futures, Promises and Deferreds",
   "keywords": [ "future", "promise", "deferred" ],
@@ -13,6 +13,10 @@
 
   "main": "fate.js",
   "scripts": {
-    "test": "node testFate.js"
+    "test": "node_modules/.bin/mocha test-aplus.js"
+  },
+  "devDependencies": {
+    "mocha": "~1.8.1",
+    "promises-aplus-tests": "~1.3.1"
   }
 }

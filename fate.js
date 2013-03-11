@@ -7,7 +7,9 @@
 ~ found in the LICENSE file included with this distribution.
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-For futures and promises {then:, resolve:, reject:} must always be fully bound closures.
+For futures and promises {then:, fulfill:, reject:} must always be fully bound closures.
+
+Updated to conform to Promises/A+ Compliance Test Suite. (2013-03-11)
 */
 
 "use strict";
@@ -19,13 +21,13 @@ Promise.api = {
   done: function(success) { return this.then(success, undefined) },
   fail: function(failure) { return this.then(undefined, failure) },
   thenCall: function(callback) { // chain to node-style callback(err, ans)
-    return this.then(callback.bind(this,null), callback.bind(this)) },
+    return this.then(callback.bind(null,null), function(reason){callback(reason)}) },
   timeout: function(ms) { return Promise.timeout(this, ms) },
   thenLog: function(opt) { return thenLog(this, opt) }
 }
 Promise.prototype = Object.create(Promise.api,
   {promise: {get: function(){return this}}
-  ,state: {get: function(){return this.then.state}}
+  ,state: {enumerable: true, get: function(){return this.then.state}}
   })
 
 exports.isPromise = Promise.isPromise = isPromise
@@ -47,149 +49,115 @@ function when(tgt, success, failure) {
 var slice = Array.prototype.slice
 
 exports.Future = Future
-function Future(then, resolve, reject) {
+function Future(then, fulfill, reject) {
   this.promise = new Promise(then)
-  if (resolve!==undefined)
-    this.resolve = resolve
+  if (fulfill!==undefined)
+    this.fulfill = fulfill
   if (reject!==undefined)
     this.reject = reject
 }
 Future.prototype = Object.create(Promise.api,
   {then: {get: function(){return this.promise.then}}
   ,state: {get: function(){return this.promise.state}}
+  ,resolve: {get: function(){return this.fulfill}}
   ,callback: {get: function(){ var self=this; // lazy-bind node-style callback
-    return function(err, ans){
-      return err ? self.reject(err)
-        : self.resolve.apply(self, slice.call(arguments, 1)); }}}
+    return function(err, value){ return err!=null ? self.reject(err) : self.fulfill(value) }}}
   })
-Future.prototype.resolve = function(result) { }
-Future.prototype.reject = function(error) { }
+Future.prototype.fulfill = function(value) { }
+Future.prototype.reject = function(reason) { }
+Future.nextTick = (function(){
+  if (typeof process !== 'undefined' && process.nextTick)
+    return process.nextTick
+  if (typeof setImmediate !== 'undefined')
+    return setImmediate
+  if (typeof setTimeout !== 'undefined')
+    return setTimeout
+  return window.setImmediate || window.setTimeout; })()
 
-//~ Future: thenable, deferred, resolved and rejected ~~~~~~~
-exports.thenable = Future.thenable = thenable
-thenable.unpack = function(obj, failure) { return {
-  success: obj.success || obj.resolve,
-  failure: failure || obj.failure || obj.reject} }
-function thenable(thisArg, success, failure, inner) {
-  if (typeof success==="object") {
-    var obj = thenable.unpack(obj=success, failure)
-    failure = obj.failure; success = obj.success
-  }
-  if (success===undefined && failure===undefined)
-    return Future.deferred(thisArg)
-  else return new Future(then, resolve, reject)
+//~ Future: deferred, resolved and rejected ~~~~~~~
 
-  function argsAsArray(args) {
-    return args instanceof Array ? args : [args] }
-  function then(success, failure) {
-    if (inner===undefined)
-      inner = Future.deferred(thisArg)
-    return inner.then(success, failure) }
-  function resolve() {
-    then.state = true
-    var resultVec = arguments,
-        tail = (inner!==undefined) ? inner : Future.absentTail
-    if (success!==undefined)
-      try {
-        var res = success.apply(thisArg, resultVec)
-        if (res!==undefined)
-          resultVec = argsAsArray(res)
-      } catch (err) {
-        success = failure = undefined
-        inner = Future.rejected(err, thisArg)
-        return tail.reject(err)
-      }
-    success = failure = undefined
-    inner = Future.resolved(resultVec, thisArg, true)
-    return tail.resolve.apply(tail, resultVec) }
-  function reject() {
-    then.state = false
-    var errorVec = arguments,
-        tail = (inner!==undefined) ? inner : Future.absentTail
-    if (failure!==undefined)
-      try {
-        var res = failure.apply(thisArg, errorVec)
-        if (res!==undefined)
-          errorVec = argsAsArray(res)
-      } catch (err) { errorVec = [err] }
-    success = failure = undefined
-    inner = Future.rejected(errorVec, thisArg, true)
-    return tail.reject.apply(tail, errorVec) } }
+exports.deferredThen = Future.deferredThen = deferredThen
+function deferredThen(onFulfilled, onRejected) {
+  var ftr=Future.deferred(),
+      self=Object.create(ftr);
 
-Future.absentTail = {resolve: function() {}, reject: function() {}}
-Future.onActionError = function(error, thisArg) { console.error(error) }
+  if (typeof onFulfilled === 'function')
+    self.fulfill = function (value) {
+      try { var ans = onFulfilled(value)
+      } catch (err) { return ftr.reject(err) }
+      if (ans==null || typeof ans.then !=='function')
+        return ftr.fulfill(ans)
+      ans.then(ftr.fulfill, ftr.reject) }
 
+  if (typeof onRejected === 'function')
+    self.reject = function (reason) {
+      try { var ans = onRejected(reason)
+      } catch (err) { return ftr.reject(err) }
+      if (ans==null || typeof ans.then !=='function')
+        return ftr.fulfill(ans)
+      ans.then(ftr.fulfill, ftr.reject) }
+
+  return self; }
+
+exports.pending = deferred
 exports.deferred = Future.deferred = deferred
-function deferred(thisArg) {
-  var actions=[], inner
-  return new Future(then, resolve, reject)
-  function then(success, failure) {
-    if (inner!==undefined)
-      return inner.then(success, failure)
-    var ans = Future.thenable(thisArg, success, failure)
-    actions.push(ans)
-    return ans.promise }
-  function resolve() {
-    then.state = true
-    if (actions===undefined) return;
-    var resultVec = arguments
-    inner = Future.resolved(resultVec, thisArg, true)
-    for (var i=0; i<actions.length; i++) {
-      var ea = actions[i].resolve
-      if (ea===undefined) continue
-      try { ea.apply(thisArg, resultVec)
-      } catch (err) { Future.onActionError(err, thisArg) }
-    } actions = undefined }
-  function reject() {
-    then.state = false
-    if (actions===undefined) return
-    var errorVec = arguments
-    inner = Future.rejected(errorVec, thisArg, true)
-    for (var i=0; i<actions.length; i++) {
-      var ea = actions[i].reject
-      if (ea===undefined) continue
-      try { ea.apply(thisArg, errorVec)
-      } catch (err) { Future.onActionError(err, thisArg) }
-    } actions = undefined }
-}
+function deferred() {
+  var actions=[], answerFn;
 
-exports.resolved = Future.resolved = resolved
-function resolved(result, thisArg, inVecForm) {
-  if (!inVecForm) result = [result]
-  else result = slice.call(result, 0)
-  then.state = true
-  return new Future(then)
-  function then(success, failure) {
-    var ans = thenable(thisArg, success, failure)
-    return ans.resolve.apply(ans, result), ans.promise }}
+  function then_deferred(onFulfilled, onRejected) {
+    var ftr = deferredThen(onFulfilled, onRejected)
+    actions.push(ftr)
+    if (answerFn!==undefined && 1===actions.length)
+      Future.nextTick(answerFn)
+    return ftr.promise }
+  function fulfill_deferred(value) {
+    if (answerFn !== undefined) return;
+    then_deferred.state = true
+    answerFn = answer.bind(null, function (ftr) {
+      try { ftr.fulfill(value) } catch (err) {} })
+    return answerFn() }
+  function reject_deferred(reason) {
+    if (answerFn !== undefined) return;
+    then_deferred.state = false
+    answerFn = answer.bind(null, function (ftr) {
+      try { ftr.reject(reason) } catch (err) {} })
+    return answerFn() }
+  function answer(answerFn) {
+    actions.splice(0).forEach(answerFn) }
+
+  return new Future(then_deferred, fulfill_deferred, reject_deferred) }
+
+exports.resolved = Future.resolved = fulfilled
+exports.fulfilled = Future.fulfilled = fulfilled
+function fulfilled(value) {
+  var ftr = deferred();
+  ftr.fulfill(value);
+  return ftr.promise }
 
 exports.rejected = Future.rejected = rejected
-function rejected(error, thisArg, inVecForm) {
-  if (!inVecForm) error = [error]
-  else error = slice.call(error, 0)
-  then.state = false
-  return new Future(then)
-  function then(success, failure) {
-    var ans = thenable(thisArg, success, failure)
-    return ans.reject.apply(ans, error), ans.promise }}
+function rejected(reason) {
+  var ftr = deferred();
+  ftr.reject(reason);
+  return ftr.promise }
 
 
 //~ Utility Futures: invert, delay and timeout ~~~~~~~~~~~~~~
 exports.inverted = Future.inverted = inverted
 function inverted(tgt) {
   if (tgt===undefined) tgt = deferred()
-  return new Future(tgt.promise.then, tgt.reject, tgt.resolve) }
+  return new Future(tgt.promise.then, tgt.reject, tgt.fulfill) }
 
 exports.delay = Future.delay = Promise.delay = delay
 function delay(ms, bReject) {
   var res=deferred(),
-      tid=setTimeout(bReject?res.reject:res.resolve, ms)
+      tid=setTimeout(bReject?res.reject:res.fulfill, ms)
   res.always(function() {clearTimeout(tid)})
   return res }
 exports.timeout = Future.timeout = Promise.timeout = timeout
 function timeout(tgt, ms, bReject) {
-  var res = delay(ms, (bReject!=undefined?bReject:true))
-  when(tgt, res)
+  bReject = bReject===undefined ? true : !!bReject;
+  var res = delay(ms, bReject)
+  when(tgt, res.resolve, res.reject)
   return res }
 
 exports.thenLog = thenLog
@@ -218,37 +186,37 @@ function forEachPromise(anArray, step) {
   if (n<=0) step(undefined, true, 0, n) }
 
 exports.every = Future.every = Promise.every = every
-function every(anArray, thisArg) {
-  var future=Future.deferred(thisArg), state=true
+function every(anArray) {
+  var future=Future.deferred(), state=true
   forEachPromise(anArray, function(ea_state, i, n) {
     state = state || ea_state
     if (i<n) return
     else if (state)
-      future.resolve({i:i,n:n})
+      future.fulfill({i:i,n:n})
     else future.reject({i:i,n:n}) })
   return future.promise }
 
 exports.all = Future.all = Promise.all = all
-function all(anArray, thisArg) {
-  var future=Future.deferred(thisArg)
+function all(anArray) {
+  var future=Future.deferred()
   forEachPromise(anArray, function(state, i, n) {
     if (!state) future.reject({i:i,n:n})
-    else if (i>=n) future.resolve({i:i,n:n}) })
+    else if (i>=n) future.fulfill({i:i,n:n}) })
   return future.promise }
 
 exports.first = Future.first = Promise.first = first
-function first(anArray, thisArg) {
-  var future=Future.deferred(thisArg)
+function first(anArray) {
+  var future=Future.deferred()
   forEachPromise(anArray, function(state, i, n) {
-    if (state) future.resolve({i:i,n:n})
+    if (state) future.fulfill({i:i,n:n})
     else future.reject({i:i,n:n}) })
   return future.promise }
 
 exports.any = Future.any = Promise.any = any
-function any(anArray, thisArg) {
-  var future=Future.deferred(thisArg)
+function any(anArray) {
+  var future=Future.deferred()
   forEachPromise(anArray, function(state, i, n) {
-    if (state) future.resolve({i:i,n:n})
+    if (state) future.fulfill({i:i,n:n})
     else if (i>=n) future.reject({i:i,n:n}) })
   return future.promise }
 
