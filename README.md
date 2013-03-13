@@ -1,39 +1,60 @@
-Fate is a small implementation of CommonJS Promises/A
+[![Promises/A+ 1.0 compliant][A+logo]][A+]
+
+Fate is a closure based implementation of [Promises/A+][A+]
+
+ [A+]: http://promises-aplus.github.com/promises-spec
+ [A+logo]: http://promises-aplus.github.com/promises-spec/assets/logo-small.png
+
 
 ## Promises and Futures
-A `Promise` is an object with a `then(success, failure)` closure.
+A `Promise` is an object with a `then(onFulfilled, onRejected)` closure.
 
-A `Future` is a `Promise` that with `resolve(result)` and `reject(error)` closures.
+A `Future` is a `Promise` with bound `fulfill(value)` and `reject(reason)` closures.
 
-`thenable(thisArg, success, failure)` returns an unresolved `Future` instance bound to `success` and
-`failure` callbacks. `thenable()` is used to implement the semantics of other futures.
+`deferred()` returns an unresolved `Future` instance.
 
-`deferred(thisArg)` returns an unresolved `Future` instance.
-`resolved(result, thisArg)` returns a resolved `Future` instance.
-`rejected(error, thisArg)` returns a rejected `Future` instance.
-`inverted(aFuture)` returns a `Future` instance with `reject()` and `resolve()` transposed.
+`fulfilled(result)` returns a fulfilled `Future` instance.
 
+`rejected(error)` returns a rejected `Future` instance.
+
+---
+`inverted(aFuture)` returns a `Future` instance with `reject()` and `fulfill()` transposed.
+
+---
 `delay(ms)` returns a `deferred()` that will be answered after `ms` timeout.
+
 `timeout(target, ms)` returns a `delay(ms)` that will additionally be answered upon `target` being answered.
 
+
 ## Compound Promises
-`each(anArray, thisArg)` is a compound `deferred()` answered after
-all promises in `anArray` are either rejected or resolved.
-Resolved if *all* promise are resolved from `anArray`..
+`each(anArray)` is a compound `deferred()` answered after
+all promises in `anArray` are either rejected or fulfilled.
+
+Fulfilled if *all* promise are fulfilled from `anArray`.
+
 Rejected if *any* promises is rejected from `anArray`.
 
-`all(anArray, thisArg)` is a compound `deferred()` answered after
-all promises are resolved, or when any promise is rejected.
-Resolved if *any* promise is resolved from `anArray`.
+---
+`all(anArray)` is a compound `deferred()` answered after
+all promises are fulfilled, or when any promise is rejected.
+
+Fulfilled if *any* promise is fulfilled from `anArray`.
+
 Rejected if *all* promises are rejected from `anArray`.
 
-`first(anArray, thisArg)` is a compound `deferred()` answered after
-any promise is either resolved or rejected.
-Resolved if *any* promise is resolved from `anArray`.
+---
+`first(anArray)` is a compound `deferred()` answered after
+any promise is either fulfilled or rejected.
+
+Fulfilled if *any* promise is fulfilled from `anArray`.
+
 Rejected if *all* promises are rejected from `anArray`.
 
-`any(anArray, thisArg)` is a compound `deferred()` answered after
-any promise is resolved, or when all are rejected.
-Resolved if *any* promise is resolved from `anArray`.
+---
+`any(anArray)` is a compound `deferred()` answered after
+any promise is fulfilled, or when all are rejected.
+
+Fulfilled if *any* promise is fulfilled from `anArray`.
+
 Rejected if *all* promises are rejected from `anArray`.
 
