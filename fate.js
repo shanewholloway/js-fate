@@ -164,14 +164,15 @@ exports.thenLog = thenLog
 function thenLog(tgt, opt) {
   if (!opt) opt = {}
   var log = opt.log || console.log,
+      m = opt.msg ? opt.msg+' ' : '',
       s = opt.success || 'success',
       f = opt.failure || 'failure'
 
   if (!opt.showArgs && opt.showArgs!==undefined)
     tgt.promise.then(function(){log(s)}, function(){log(f)})
   else tgt.promise.then(
-    function(){log(s+': ', slice.call(arguments, 0).join(', '))},
-    function(){log(f+': ', slice.call(arguments, 0).join(', '))})
+    function(){log(m+s+': ', slice.call(arguments, 0).join(', '))},
+    function(){log(m+f+': ', slice.call(arguments, 0).join(', '))})
   return tgt /* don't chain for logging */ }
 
 //~ Compositions: any, all, every, first ~~~~~~~~~~~~~~~~~~~~
