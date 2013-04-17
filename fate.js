@@ -78,6 +78,9 @@ Future.nextTick = (function(){
 
 exports.deferredThen = Future.deferredThen = deferredThen
 function deferredThen(onFulfilled, onRejected) {
+  if (onFulfilled != null && typeof onFulfilled !== 'function' && onRejected == null) {
+    onRejected = onFulfilled.reject; onFulfilled = onFulfilled.fulfill; }
+
   var ftr=Future.deferred(),
       self=Object.create(ftr);
 
