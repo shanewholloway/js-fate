@@ -179,48 +179,53 @@ function thenLog(tgt, opt) {
   return tgt /* don't chain for logging */ }
 
 //~ Compositions: any, all, every, first ~~~~~~~~~~~~~~~~~~~~
-function forEachPromise(anArray, step) {
+function forEachPromise(anArray, step, ifEmpty) {
   var i,c=0,n=anArray.length
+  if (n===0) return step(ifEmpty, 0, n)
   for(i=0; i<n; ++i)
     if (!isPromise(anArray[i]))
       step(true, ++c, n)
     else anArray[i].promise.then(
       function() {step(true, ++c, n)},
-      function() {step(false, ++c, n)})
-  if (n<=0) step(undefined, true, 0, n) }
+      function() {step(false, ++c, n)}) }
 
 exports.every = Future.every = Promise.every = every
-function every(anArray) {
-  var future=Future.deferred(), state=true
+function every(anArray, ifEmpty) {
+  var future=Future.deferred(),
+      state=ifEmpty==null || !!ifEmpty
   forEachPromise(anArray, function(ea_state, i, n) {
     state = state || ea_state
     if (i<n) return
     else if (state)
       future.fulfill({i:i,n:n})
-    else future.reject({i:i,n:n}) })
+    else future.reject({i:i,n:n})
+  }, ifEmpty)
   return future.promise }
 
 exports.all = Future.all = Promise.all = all
-function all(anArray) {
+function all(anArray, ifEmpty) {
   var future=Future.deferred()
   forEachPromise(anArray, function(state, i, n) {
     if (!state) future.reject({i:i,n:n})
-    else if (i>=n) future.fulfill({i:i,n:n}) })
+    else if (i===n) future.fulfill({i:i,n:n})
+  }, ifEmpty)
   return future.promise }
 
 exports.first = Future.first = Promise.first = first
-function first(anArray) {
+function first(anArray, ifEmpty) {
   var future=Future.deferred()
   forEachPromise(anArray, function(state, i, n) {
     if (state) future.fulfill({i:i,n:n})
-    else future.reject({i:i,n:n}) })
+    else future.reject({i:i,n:n})
+  }, ifEmpty)
   return future.promise }
 
 exports.any = Future.any = Promise.any = any
-function any(anArray) {
+function any(anArray, ifEmpty) {
   var future=Future.deferred()
   forEachPromise(anArray, function(state, i, n) {
     if (state) future.fulfill({i:i,n:n})
-    else if (i>=n) future.reject({i:i,n:n}) })
+    else if (i===n) future.reject({i:i,n:n})
+  }, ifEmpty)
   return future.promise }
 
