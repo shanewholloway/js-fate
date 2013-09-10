@@ -9,223 +9,292 @@
 
 For futures and promises {then:, fulfill:, reject:} must always be fully bound closures.
 
+Refactored for speed and reduced memory footprint. (2013-09-10)
 Updated to conform to Promises/A+ Compliance Test Suite. (2013-03-11)
 */
+module.exports = exports = (function(){
+'use strict';
 
-"use strict";
+var g_nextTick = (
+      (typeof process!=='undefined') ? process.nextTick
+    : (typeof setImmediate!=='undefined') ? setImmediate
+    : (typeof window==='undefined') ? setTimeout
+    : window.setImmediate || window.setTimeout );
 
-exports.Promise = Promise
-function Promise(then) { if (then!==undefined) this.then = then }
-Promise.api = {
-  always: function(always) { return this.then(always, always) },
-  done: function(success) { return this.then(success, undefined) },
-  fail: function(failure) { return this.then(undefined, failure) },
-  thenCall: function(callback) { // chain to node-style callback(err, ans)
-    return this.then(callback.bind(null,null), function(reason){callback(reason)}) },
-  timeout: function(ms) { return Promise.timeout(this, ms) },
-  thenLog: function(opt) { return thenLog(this, opt) }
+function bindFnFuture(promise, ftr) {
+  ftr.fulfill = ftr.bind(false) // ftr.call(false, arg)
+  ftr.reject = ftr.bind(true) // ftr.call(true, err)
+  ftr.promise = promise
+  ftr.then = promise.then
+  return ftr }
+
+function bindFnPromise(then) {
+  then.then = then // make then a its own thenable/promise
+  then.promise = then // then is a promise is a thenable
+  return then }
+
+var PromiseApi = {
+   get promise() { return this }
+  ,done: function(onFulfilled) { return this.then(onFulfilled) }
+  ,fail: function(onRejected) { return this.then(null, onRejected) }
+  ,always: function(onAlways) { return this.then(onAlways, onAlways) }
+  ,thenCall: function(callback) { // chain to node-style callback(err, ans)
+    return this.then(function(ans){ callback(null, ans) }, function(err){ callback(err) }) }
+  ,timeout: function(ms, bFulfill) { return this.fate.timeout(this, ms, bFulfill) }
+  //,fate: fate_module,
 }
-Promise.prototype = Object.create(Promise.api,
-  {promise: {get: function(){return this}}
-  ,state: {enumerable: true, get: function(){return this.then.state}}
-  })
 
-exports.isPromise = Promise.isPromise = isPromise
-function isPromise(tgt, orHasPromise) {
-  return (tgt!=null) && tgt.promise!=null && tgt.promise.then!=null }
+function createPromiseApi(module) {
+  var api = Object.create(PromiseApi, {fate:{value:module}})
 
-exports.asPromise = Promise.wrap = asPromise
-function asPromise(tgt) {
-  if (tgt==null || tgt.promise==null)
-      tgt = Future.resolved(tgt)
-  return tgt.promise }
+  module.Promise = Promise
+  function Promise(then) { this.then = then }
+  Promise.prototype = api
 
-exports.when = Promise.when = when
-function when(tgt, success, failure) {
-  if (success!==undefined || failure!==undefined)
-    return Promise.wrap(tgt).then(success, failure)
-  else return Promise.wrap(tgt) }
+  function bindApiPromise(then) { return new Promise(then) }
+  return bindApiPromise }
 
-var slice = Array.prototype.slice
+/* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
 
-exports.Future = Future
-function Future(then, fulfill, reject) {
-  this.promise = new Promise(then)
-  if (fulfill!==undefined)
-    this.fulfill = fulfill
-  if (reject!==undefined)
-    this.reject = reject
-}
-Future.prototype = Object.create(Promise.api,
-  {then: {get: function(){return this.promise.then}}
-  ,state: {get: function(){return this.promise.state}}
-  ,resolve: {get: function(){return this.fulfill}}
-  ,callback: {get: function(){ var self=this; // lazy-bind node-style callback
-    return function(err, value){ return err!=null ? self.reject(err) : self.fulfill(value) }}}
-  })
-Future.prototype.fulfill = function(value) { }
-Future.prototype.reject = function(reason) { }
-Future.nextTick = (function(){
-  if (typeof process !== 'undefined' && process.nextTick)
-    return process.nextTick
-  if (typeof setImmediate !== 'undefined')
-    return setImmediate
-  if (typeof setTimeout !== 'undefined')
-    return setTimeout
-  return window.setImmediate || window.setTimeout; })()
+var exports = fate_module.call(fate_module,
+      {promiseApi:true, allowSync:false})
+exports.sync_api = fate_module({promiseApi:true, allowSync:true})
+exports.lite_api = fate_module({promiseApi:false, allowSync:true})
+return exports
 
-//~ Future: deferred, resolved and rejected ~~~~~~~
+function fate_module(opt) {
+  var module = this
+  if (module==null) module = {}
+  if (opt==null) opt = {}
 
-exports.deferredThen = Future.deferredThen = deferredThen
-function deferredThen(onFulfilled, onRejected) {
-  if (onFulfilled != null && typeof onFulfilled !== 'function' && onRejected == null) {
-    onRejected = onFulfilled.reject; onFulfilled = onFulfilled.fulfill; }
+  var tickRev=1
 
-  var ftr=Future.deferred(),
-      self=Object.create(ftr);
+  var resolvePromise = opt.allowSync ? resolvePromiseEx : resolvePromiseLater;
+  function resolvePromiseLater(tip, rej, arg) {
+    return resolveQueueLater([[tip, rej, arg]]), true }
+  function resolvePromiseEx(tip, rej, arg, resolved) {
+    var q = [[tip, rej, arg]]
+    if (tickRev === tip.v)
+      return resolveQueueLater(q), true
+    else return resolveQueueSync(q), false }
 
-  if (typeof onFulfilled === 'function')
-    self.fulfill = function (value) {
-      try { var ans = onFulfilled(value)
-      } catch (err) { return ftr.reject(err) }
-      if (ans==null || typeof ans.then !=='function')
-        return ftr.fulfill(ans)
-      ans.then(ftr.fulfill, ftr.reject) }
+  var bindPromise = opt.promiseApi ? createPromiseApi(module) : bindFnPromise;
+  function then_tree(onFulfilled, onRejected) {
+    if (this.resolved !== undefined)
+      return this.resolved(onFulfilled, onRejected)
 
-  if (typeof onRejected === 'function')
-    self.reject = function (reason) {
-      try { var ans = onRejected(reason)
-      } catch (err) { return ftr.reject(err) }
-      if (ans==null || typeof ans.then !=='function')
-        return ftr.fulfill(ans)
-      ans.then(ftr.fulfill, ftr.reject) }
+    var tip = []; tip.v = tickRev
+    if (typeof onFulfilled === 'function')
+      tip.onFulfilled = onFulfilled
+    if (typeof onRejected === 'function')
+      tip.onRejected = onRejected
 
-  return self; }
+    this.push(tip)
+    return bindPromise(then_tree.bind(tip)) }
 
-exports.pending = deferred
-exports.deferred = Future.deferred = deferred
-function deferred() {
-  var actions=[], answerFn;
+  function deferredEx(tip) {
+    return bindFnFuture(bindPromise(then_tree.bind(tip)), function(arg) {
+      if (tip.resolved!==undefined)
+        return false // already resolved
 
-  function then_deferred(onFulfilled, onRejected) {
-    var ftr = deferredThen(onFulfilled, onRejected)
-    actions.push(ftr)
-    if (answerFn!==undefined && 1===actions.length)
-      Future.nextTick(answerFn)
+      var rej = this; // this is true if called as reject(), or false if called as fulfill
+      if (rej!==false && rej!==true) // then used as a callback function
+        rej = arg!=null ? true : (arg=arguments[1],false);
+
+      tip.resolved = (rej ? rejected_closure(arg) : fulfilled_closure(arg))
+      resolvePromise(tip, rej, arg)
+      return true } )}
+
+  module.fulfilled_closure = fulfilled_closure
+  function fulfilled_closure(arg) { var self
+    function then_fulfilled(onFulfilled, onRejected) {
+      if (typeof onFulfilled !== 'function')
+        return self!==undefined ? self : self=bindPromise(then_fulfilled)
+      var tip = []; tip.onFulfilled = onFulfilled
+      // always later because then & resolve happen in same turn
+      resolvePromiseLater(tip, false, arg)
+      return bindPromise(then_tree.bind(tip)) }
+    return then_fulfilled }
+
+  module.rejected_closure = rejected_closure
+  function rejected_closure(err) { var self
+    function then_rejected(onFulfilled, onRejected) {
+      if (typeof onRejected !== 'function')
+        return self!==undefined ? self : self=bindPromise(then_rejected)
+      var tip = []; tip.onRejected = onRejected
+      // always later because then & resolve happen in same turn
+      resolvePromiseLater(tip, true, err)
+      return bindPromise(then_tree.bind(tip)) }
+    return then_rejected }
+
+  module.deferred = deferred
+  function deferred() { return deferredEx([]) }
+  module.fulfilled = fulfilled
+  function fulfilled(arg) { return bindPromise(fulfilled_closure(arg)) }
+  module.rejected = rejected
+  function rejected(err) { return bindPromise(rejected_closure(err)) }
+
+  /* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
+
+  var tickQueueNext=[], tickQueueActive=null
+
+  module.tick = tick
+  function tick() {
+    if (tickQueueActive!==null)
+      return null // no nested calls
+
+    if (tickQueueNext.length===0)
+      return tickRev++, false // nothing to do
+
+    do {
+      tickRev++ // inc tick revision
+
+      // setup for next loop
+      tickQueueActive = tickQueueNext; tickQueueNext = []
+
+      for(var i=0; i<tickQueueActive.length; ++i)
+        resolveQueueSync(tickQueueActive[i])
+
+    } while (tickQueueNext.length!==0)
+    tickQueueActive = null // free references
+    return true }
+
+  var scheduleNextTick = (opt.nextTick || g_nextTick).bind(null, tick)
+  function resolveQueueLater(aQueue) {
+    if (tickQueueNext.length===0 && tickQueueActive===null)
+      scheduleNextTick()
+    tickQueueNext.push(aQueue) }
+
+  function resolveQueueSync(queue) {
+    var after=[]
+
+    while (queue.length!==0) {
+      var tip=queue.pop(), arg=tip[2], rej=tip[1], tip=tip[0]
+
+      var notify = rej ? tip.onRejected : tip.onFulfilled
+      delete tip.v; delete tip.onRejected; delete tip.onFulfilled
+
+      var l_rej=rej, l_arg=arg
+      if (notify !== undefined)
+        try { arg = notify(arg); rej = false }
+        catch (err) { arg = err; rej = true }
+
+      if (tip.length===0) continue;
+
+      if (rej===false && arg!=null) {
+        try { // test for thenable --> chained promise
+          var l_then = arg.then
+          if (typeof l_then === 'function') {
+            var chain = deferredEx(tip.splice(0, tip.length))
+            l_then.call(arg, chain.fulfill, chain.reject)
+            continue }
+        } catch (err) { arg = err; rej = true }
+      }
+
+      var resolved = rej ? rejected_closure(arg) : fulfilled_closure(arg)
+      while (tip.length!==0) {
+        var ea = tip.pop()
+        ea.resolved = resolved
+        ;(tickRev !== ea.v ? queue : after)
+          .push([ea, rej, arg])
+      }
+      if (after.length!==0)
+        after = resolveQueueLater(after), [];
+    }
+  }
+
+  return fate_api_extensions(module) || module }
+
+
+/* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
+
+function fate_api_extensions(module, opt) {
+  module.fate = function(opt) { return fate_module.call(this||{}, opt) }
+
+  module.when = when
+  function when(tgt, onFulfilled, onRejected) {
+    var then = tgt!=null ? tgt.then : null
+    if (then===null && tgt!=null && tgt.promise!=null)
+      then = tgt.promise.then
+    if (typeof then !== 'function')
+      then = module.fulfilled(tgt).then
+    return then(onFulfilled, onRejected) }
+
+  module.inverted = inverted
+  function inverted(tgt) {
+    var ftr = module.deferred()
+    when(tgt, ftr.reject, ftr.fulfill)
     return ftr.promise }
-  function fulfill_deferred(value) {
-    if (answerFn !== undefined) return;
-    then_deferred.state = true
-    answerFn = answer.bind(null, function (ftr) {
-      try { ftr.fulfill(value) } catch (err) {} })
-    return answerFn() }
-  function reject_deferred(reason) {
-    if (answerFn !== undefined) return;
-    then_deferred.state = false
-    answerFn = answer.bind(null, function (ftr) {
-      try { ftr.reject(reason) } catch (err) {} })
-    return answerFn() }
-  function answer(answerFn) {
-    actions.splice(0).forEach(answerFn) }
 
-  return new Future(then_deferred, fulfill_deferred, reject_deferred) }
+  module.delay = delay
+  function delay(ms, bFulfill) {
+    var ftr = module.deferred(),
+      tid = setTimeout(bFulfill ? ftr.fulfill : ftr.reject),
+      clear = clearTimeout.bind(null, tid)
+    ftr.promise.then(clear, clear)
+    return ftr }
 
-exports.resolved = Future.resolved = fulfilled
-exports.fulfilled = Future.fulfilled = fulfilled
-function fulfilled(value) {
-  var ftr = deferred();
-  ftr.fulfill(value);
-  return ftr.promise }
-
-exports.rejected = Future.rejected = rejected
-function rejected(reason) {
-  var ftr = deferred();
-  ftr.reject(reason);
-  return ftr.promise }
+  module.timeout = timeout
+  function timeout(tgt, ms, bFulfill) {
+    var ftr = delay(ms, bFulfill)
+    return when(tgt, ftr.fulfill, ftr.reject) }
 
 
-//~ Utility Futures: invert, delay and timeout ~~~~~~~~~~~~~~
-exports.inverted = Future.inverted = inverted
-function inverted(tgt) {
-  if (tgt===undefined) tgt = deferred()
-  return new Future(tgt.promise.then, tgt.reject, tgt.fulfill) }
+  //~ Compositions: any, all, every, first ~~~~~~~~~~~~~~~~~~~~
 
-exports.delay = Future.delay = Promise.delay = delay
-function delay(ms, bReject) {
-  var res=deferred(),
-      tid=setTimeout(bReject?res.reject:res.fulfill, ms)
-  res.always(function() {clearTimeout(tid)})
-  return res }
-exports.timeout = Future.timeout = Promise.timeout = timeout
-function timeout(tgt, ms, bReject) {
-  bReject = bReject===undefined ? true : !!bReject;
-  var res = delay(ms, bReject)
-  when(tgt, res.resolve, res.reject)
-  return res }
+  function forEachPromise(anArray, step, ifEmpty) {
+    var i,c=0,n=anArray.length
+    if (n===0) return step(ifEmpty, 0, n)
+    for(i=0; i<n; ++i) {
+      var p = anArray[i]
+      if (p!=null && typeof p.then === 'function')
+        p.then(step_true, step_false)
+      else step(true, ++c, n)
+    }
+    function step_true() {step(true, ++c, n)}
+    function step_false() {step(false, ++c, n)}
+  }
 
-exports.thenLog = thenLog
-function thenLog(tgt, opt) {
-  if (!opt) opt = {}
-  var log = opt.log || console.log,
-      m = opt.msg ? opt.msg+' ' : '',
-      s = opt.success || 'success',
-      f = opt.failure || 'failure'
+  module.every = every
+  function every(anArray, ifEmpty) {
+    var future=module.deferred(),
+        state=ifEmpty==null || !!ifEmpty
+    forEachPromise(anArray, function(ea_state, i, n) {
+      state = state || ea_state
+      if (i<n) return
+      else if (state)
+        future.fulfill({i:i,n:n})
+      else future.reject({i:i,n:n})
+    }, ifEmpty)
+    return future.promise }
 
-  if (!opt.showArgs && opt.showArgs!==undefined)
-    tgt.promise.then(function(){log(s)}, function(){log(f)})
-  else tgt.promise.then(
-    function(){log(m+s+': ', slice.call(arguments, 0).join(', '))},
-    function(){log(m+f+': ', slice.call(arguments, 0).join(', '))})
-  return tgt /* don't chain for logging */ }
+  module.all = all
+  function all(anArray, ifEmpty) {
+    var future=module.deferred()
+    forEachPromise(anArray, function(state, i, n) {
+      if (!state) future.reject({i:i,n:n})
+      else if (i===n) future.fulfill({i:i,n:n})
+    }, ifEmpty)
+    return future.promise }
 
-//~ Compositions: any, all, every, first ~~~~~~~~~~~~~~~~~~~~
-function forEachPromise(anArray, step, ifEmpty) {
-  var i,c=0,n=anArray.length
-  if (n===0) return step(ifEmpty, 0, n)
-  for(i=0; i<n; ++i)
-    if (!isPromise(anArray[i]))
-      step(true, ++c, n)
-    else anArray[i].promise.then(
-      function() {step(true, ++c, n)},
-      function() {step(false, ++c, n)}) }
+  module.first = first
+  function first(anArray, ifEmpty) {
+    var future=module.deferred()
+    forEachPromise(anArray, function(state, i, n) {
+      if (state) future.fulfill({i:i,n:n})
+      else future.reject({i:i,n:n})
+    }, ifEmpty)
+    return future.promise }
 
-exports.every = Future.every = Promise.every = every
-function every(anArray, ifEmpty) {
-  var future=Future.deferred(),
-      state=ifEmpty==null || !!ifEmpty
-  forEachPromise(anArray, function(ea_state, i, n) {
-    state = state || ea_state
-    if (i<n) return
-    else if (state)
-      future.fulfill({i:i,n:n})
-    else future.reject({i:i,n:n})
-  }, ifEmpty)
-  return future.promise }
+  module.any = any
+  function any(anArray, ifEmpty) {
+    var future=module.deferred()
+    forEachPromise(anArray, function(state, i, n) {
+      if (state) future.fulfill({i:i,n:n})
+      else if (i===n) future.reject({i:i,n:n})
+    }, ifEmpty)
+    return future.promise }
 
-exports.all = Future.all = Promise.all = all
-function all(anArray, ifEmpty) {
-  var future=Future.deferred()
-  forEachPromise(anArray, function(state, i, n) {
-    if (!state) future.reject({i:i,n:n})
-    else if (i===n) future.fulfill({i:i,n:n})
-  }, ifEmpty)
-  return future.promise }
+  return module }
 
-exports.first = Future.first = Promise.first = first
-function first(anArray, ifEmpty) {
-  var future=Future.deferred()
-  forEachPromise(anArray, function(state, i, n) {
-    if (state) future.fulfill({i:i,n:n})
-    else future.reject({i:i,n:n})
-  }, ifEmpty)
-  return future.promise }
-
-exports.any = Future.any = Promise.any = any
-function any(anArray, ifEmpty) {
-  var future=Future.deferred()
-  forEachPromise(anArray, function(state, i, n) {
-    if (state) future.fulfill({i:i,n:n})
-    else if (i===n) future.reject({i:i,n:n})
-  }, ifEmpty)
-  return future.promise }
-
+}).call(null);

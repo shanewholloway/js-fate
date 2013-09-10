@@ -1,6 +1,9 @@
+#!node_modules/.bin/mocha
 "use strict";
 var fate = require('./fate')
+
 describe("Promises/A+ Tests", function () {
+  fate.pending = fate.deferred
   require("promises-aplus-tests").mocha(fate)
 })
 

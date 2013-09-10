@@ -1,9 +1,9 @@
 {
   "name": "fate",
-  "version": "0.5.4",
+  "version": "0.7.0",
   "license": "MIT",
   "description": "Futures, Promises and Deferreds",
-  "keywords": [ "future", "promise", "deferred" ],
+  "keywords": [ "future", "deferred", "promise", "promises", "promises-aplus", "promises/A+"],
   "author": "Shane Holloway <shane@techgame.net>",
   "readmeFilename": "README.md",
 
