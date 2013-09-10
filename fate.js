@@ -28,11 +28,6 @@ function bindFnFuture(promise, ftr) {
   ftr.then = promise.then
   return ftr }
 
-function bindFnPromise(then) {
-  then.then = then // make then a its own thenable/promise
-  then.promise = then // then is a promise is a thenable
-  return then }
-
 var PromiseApi = {
    get promise() { return this }
   ,done: function(onFulfilled) { return this.then(onFulfilled) }
@@ -50,16 +45,12 @@ function createPromiseApi(module) {
   module.Promise = Promise
   function Promise(then) { this.then = then }
   Promise.prototype = api
-
-  function bindApiPromise(then) { return new Promise(then) }
-  return bindApiPromise }
+  return Promise }
 
 /* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
 
-var exports = fate_module.call(fate_module,
-      {promiseApi:true, allowSync:false})
-exports.sync_api = fate_module({promiseApi:true, allowSync:true})
-exports.lite_api = fate_module({promiseApi:false, allowSync:true})
+var exports = fate_module.call(fate_module, {allowSync:false})
+exports.sync_api = fate_module({allowSync:true})
 return exports
 
 function fate_module(opt) {
@@ -78,7 +69,9 @@ function fate_module(opt) {
       return resolveQueueLater(q), true
     else return resolveQueueSync(q), false }
 
-  var bindPromise = opt.promiseApi ? createPromiseApi(module) : bindFnPromise;
+  var Promise = createPromiseApi(module);
+  function bindPromise(then) { return new Promise(then) }
+
   function then_tree(onFulfilled, onRejected) {
     if (this.resolved !== undefined)
       return this.resolved(onFulfilled, onRejected)
