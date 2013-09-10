@@ -49,8 +49,8 @@ function createPromiseApi(module) {
 
 /* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
 
-var exports = fate_module.call(fate_module, {allowSync:false})
-exports.sync_api = fate_module({allowSync:true})
+var exports = fate_module.call(fate_module, {sync:false})
+exports.sync_api = fate_module({sync:true})
 return exports
 
 function fate_module(opt) {
@@ -60,7 +60,7 @@ function fate_module(opt) {
 
   var tickRev=1
 
-  var resolvePromise = opt.allowSync ? resolvePromiseEx : resolvePromiseLater;
+  var resolvePromise = opt.sync ? resolvePromiseEx : resolvePromiseLater;
   function resolvePromiseLater(tip, rej, arg) {
     return resolveQueueLater([[tip, rej, arg]]), true }
   function resolvePromiseEx(tip, rej, arg, resolved) {
