@@ -2,14 +2,14 @@
   "name": "fate",
   "version": "0.7.0",
   "license": "MIT",
-  "description": "Futures, Promises and Deferreds",
+  "description": "Futures, Promises and Deferreds. Closure-based implumentation of Promises/A+ spec.",
   "keywords": [ "future", "deferred", "promise", "promises", "promises-aplus", "promises/A+"],
   "author": "Shane Holloway <shane@techgame.net>",
   "readmeFilename": "README.md",
 
   "repository": {
       "type":"git",
-      "url": "https://github.com/shanewholloway/node-fate.git"},
+      "url": "https://github.com/shanewholloway/js-fate.git"},
 
   "main": "fate.js",
   "scripts": {
