@@ -21,13 +21,6 @@ var g_nextTick = (
     : (typeof window==='undefined') ? setTimeout
     : window.setImmediate || window.setTimeout );
 
-function bindFnFuture(promise, ftr) {
-  ftr.fulfill = ftr.bind(false) // ftr.call(false, arg)
-  ftr.reject = ftr.bind(true) // ftr.call(true, err)
-  ftr.promise = promise
-  ftr.then = promise.then
-  return ftr }
-
 var PromiseApi = {
    get promise() { return this }
   ,done: function(onFulfilled) { return this.then(onFulfilled) }
@@ -70,11 +63,14 @@ function fate_module(opt) {
     else return resolveQueueSync(q), false }
 
   var Promise = createPromiseApi(module);
-  function bindPromise(then) { return new Promise(then) }
+  function bindPromiseTree(root) {
+    function then(onFulfilled, onRejected) {
+      return then_tree(root, onFulfilled, onRejected) }
+    return new Promise(then) }
 
-  function then_tree(onFulfilled, onRejected) {
-    if (this.resolved !== undefined)
-      return this.resolved(onFulfilled, onRejected)
+  function then_tree(root, onFulfilled, onRejected) {
+    if (root.resolved !== undefined)
+      return root.resolved(onFulfilled, onRejected)
 
     var tip = []; tip.v = tickRev
     if (typeof onFulfilled === 'function')
@@ -82,50 +78,54 @@ function fate_module(opt) {
     if (typeof onRejected === 'function')
       tip.onRejected = onRejected
 
-    this.push(tip)
-    return bindPromise(then_tree.bind(tip)) }
+    root.push(tip)
+    return bindPromiseTree(tip) }
 
-  function deferredEx(tip) {
-    return bindFnFuture(bindPromise(then_tree.bind(tip)), function(arg) {
+  function ftr_resolve(tip, rej, arg) {
       if (tip.resolved!==undefined)
         return false // already resolved
+      tip.resolved = rej ? rejected_closure(arg) : fulfilled_closure(arg)
+      return resolvePromise(tip, rej, arg), true }
 
-      var rej = this; // this is true if called as reject(), or false if called as fulfill
-      if (rej!==false && rej!==true) // then used as a callback function
-        rej = arg!=null ? true : (arg=arguments[1],false);
-
-      tip.resolved = (rej ? rejected_closure(arg) : fulfilled_closure(arg))
-      resolvePromise(tip, rej, arg)
-      return true } )}
+  function deferredEx(tip) {
+    var ftr = function(err, arg) {
+      if (err) return ftr_resolve(tip, true, err)
+      else return ftr_resolve(tip, false, arg) }
+    ftr.fulfill = function(arg) { return ftr_resolve(tip, false, arg) }
+    ftr.reject = function(err) { return ftr_resolve(tip, true, err) }
+    ftr.promise = bindPromiseTree(tip)
+    ftr.then = ftr.promise.then
+    return ftr
+  }
 
   module.fulfilled_closure = fulfilled_closure
   function fulfilled_closure(arg) { var self
     function then_fulfilled(onFulfilled, onRejected) {
       if (typeof onFulfilled !== 'function')
-        return self!==undefined ? self : self=bindPromise(then_fulfilled)
+        return self!==undefined ? self : self=new Promise(then_fulfilled)
       var tip = []; tip.onFulfilled = onFulfilled
       // always later because then & resolve happen in same turn
       resolvePromiseLater(tip, false, arg)
-      return bindPromise(then_tree.bind(tip)) }
+      return bindPromiseTree(tip) }
     return then_fulfilled }
 
   module.rejected_closure = rejected_closure
   function rejected_closure(err) { var self
     function then_rejected(onFulfilled, onRejected) {
       if (typeof onRejected !== 'function')
-        return self!==undefined ? self : self=bindPromise(then_rejected)
+        return self!==undefined ? self : self=new Promise(then_rejected)
       var tip = []; tip.onRejected = onRejected
       // always later because then & resolve happen in same turn
       resolvePromiseLater(tip, true, err)
-      return bindPromise(then_tree.bind(tip)) }
+      return bindPromiseTree(tip) }
     return then_rejected }
 
   module.deferred = deferred
   function deferred() { return deferredEx([]) }
   module.fulfilled = fulfilled
-  function fulfilled(arg) { return bindPromise(fulfilled_closure(arg)) }
+  function fulfilled(arg) { return new Promise(fulfilled_closure(arg)) }
   module.rejected = rejected
-  function rejected(err) { return bindPromise(rejected_closure(err)) }
+  function rejected(err) { return new Promise(rejected_closure(err)) }
 
   /* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
 
@@ -222,10 +222,11 @@ function fate_api_extensions(module, opt) {
   module.delay = delay
   function delay(ms, bFulfill) {
     var ftr = module.deferred(),
-      tid = setTimeout(bFulfill ? ftr.fulfill : ftr.reject),
-      clear = clearTimeout.bind(null, tid)
+      tid = setTimeout(bFulfill ? ftr.fulfill : ftr.reject)
     ftr.promise.then(clear, clear)
-    return ftr }
+    return ftr
+    function clear() { clearTimeout(tid) }
+  }
 
   module.timeout = timeout
   function timeout(tgt, ms, bFulfill) {
