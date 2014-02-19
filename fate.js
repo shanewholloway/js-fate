@@ -222,16 +222,16 @@ function fate_api_extensions(module, opt) {
   module.delay = delay
   function delay(ms, bFulfill) {
     var ftr = module.deferred(),
-      tid = setTimeout(bFulfill ? ftr.fulfill : ftr.reject)
-    ftr.promise.then(clear, clear)
-    return ftr
-    function clear() { clearTimeout(tid) }
-  }
+      tid = setTimeout((bFulfill ? ftr.fulfill : ftr.reject), ms),
+      clearTid = function() { clearTimeout(tid) }
+    ftr.promise.then(clearTid, clearTid)
+    return ftr }
 
   module.timeout = timeout
   function timeout(tgt, ms, bFulfill) {
     var ftr = delay(ms, bFulfill)
-    return when(tgt, ftr.fulfill, ftr.reject) }
+    when(tgt, ftr.fulfill, ftr.reject)
+    return ftr.promise }
 
 
   //~ Compositions: any, all, every, first ~~~~~~~~~~~~~~~~~~~~

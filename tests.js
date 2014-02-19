@@ -1,17 +1,19 @@
 #!node_modules/.bin/mocha
 "use strict";
-var fate = require('./fate')
+var fate = require('./fate'), msTestDelay=2
 
 describe("Promises/A+ Tests", function () {
   fate.pending = fate.deferred
   require("promises-aplus-tests").mocha(fate)
 })
 
+
+function expectAnswer(aPromise, fulfilled, done) {
+return aPromise.then(
+    function(s) { if (fulfilled) { done() } else done('Promise unexpectedly fulfilled') },
+    function(s) { if (!fulfilled) { done() } else done('Promise unexpectedly rejected') }) }
+
 describe("Test collection methods", function () {
-  function expectAnswer(aPromise, fulfilled, done) {
-    return aPromise.then(
-      function(s) { if (fulfilled) { done() } else done('Promise unexpectedly fulfilled') },
-      function(s) { if (!fulfilled) { done() } else done('Promise unexpectedly rejected') }) }
 
   describe("on empty [] collections", function () {
     var coll = []
@@ -176,4 +178,98 @@ describe("Test collection methods", function () {
     })
   })
 
+})
+
+describe("Test delay method", function () {
+  it("rejected delay("+msTestDelay+") should reject", function(done) {
+    var f = fate.delay(msTestDelay)
+    expectAnswer(f, false, done)
+    f.reject()
+  })
+  it("rejected delay("+msTestDelay+", false) should reject", function(done) {
+    var f = fate.delay(msTestDelay, false)
+    expectAnswer(f, false, done)
+    f.reject()
+  })
+  it("rejected delay("+msTestDelay+", true) should reject", function(done) {
+    var f = fate.delay(msTestDelay, true)
+    expectAnswer(f, false, done)
+    f.reject()
+  })
+
+  it("fulfilled delay("+msTestDelay+") should fulfill", function(done) {
+    var f = fate.delay(msTestDelay)
+    expectAnswer(f, true, done)
+    f.fulfill()
+  })
+  it("fulfilled delay("+msTestDelay+", false) should fulfill", function(done) {
+    var f = fate.delay(msTestDelay, false)
+    expectAnswer(f, true, done)
+    f.fulfill()
+  })
+  it("fulfilled delay("+msTestDelay+", true) should fulfill", function(done) {
+    var f = fate.delay(msTestDelay, true)
+    expectAnswer(f, true, done)
+    f.fulfill()
+  })
+
+  it("unresolved delay("+msTestDelay+") should reject", function(done) {
+    var f = fate.delay(msTestDelay)
+    expectAnswer(f, false, done)
+  })
+  it("unresolved delay("+msTestDelay+", false) should reject", function(done) {
+    var f = fate.delay(msTestDelay, false)
+    expectAnswer(f, false, done)
+  })
+  it("unresolved delay("+msTestDelay+", true) should fulfill", function(done) {
+    var f = fate.delay(msTestDelay, true)
+    expectAnswer(f, true, done)
+  })
+})
+
+describe("Test timeout method", function () {
+  it("rejected timeout("+msTestDelay+") should reject", function(done) {
+    var f = fate.deferred()
+    expectAnswer(f.promise.timeout(msTestDelay), false, done)
+    f.reject()
+  })
+  it("rejected timeout("+msTestDelay+", false) should reject", function(done) {
+    var f = fate.deferred()
+    expectAnswer(f.promise.timeout(msTestDelay, false), false, done)
+    f.reject()
+  })
+  it("rejected timeout("+msTestDelay+", true) should reject", function(done) {
+    var f = fate.deferred()
+    expectAnswer(f.promise.timeout(msTestDelay, true), false, done)
+    f.reject()
+  })
+
+  it("fulfilled timeout("+msTestDelay+") should fulfill", function(done) {
+    var f = fate.deferred()
+    expectAnswer(f.promise.timeout(msTestDelay), true, done)
+    f.fulfill()
+  })
+  it("fulfilled timeout("+msTestDelay+", false) should fulfill", function(done) {
+    var f = fate.deferred()
+    expectAnswer(f.promise.timeout(msTestDelay, false), true, done)
+    f.fulfill()
+  })
+  it("fulfilled timeout("+msTestDelay+", true) should fulfill", function(done) {
+    var f = fate.deferred()
+    expectAnswer(f.promise.timeout(msTestDelay, true), true, done)
+    f.fulfill()
+  })
+
+  it("unresolved timeout("+msTestDelay+") should reject", function(done) {
+    var f = fate.deferred()
+    expectAnswer(f.promise.timeout(msTestDelay), false, done)
+  })
+  it("unresolved timeout("+msTestDelay+", false) should reject", function(done) {
+    var f = fate.deferred()
+    expectAnswer(f.promise.timeout(msTestDelay, false), false, done)
+  })
+  it("unresolved timeout("+msTestDelay+", true) should fulfill", function(done) {
+    var f = fate.deferred()
+    expectAnswer(f.promise.timeout(msTestDelay, true), true, done)
+  })
 })

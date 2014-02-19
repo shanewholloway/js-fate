@@ -1,6 +1,6 @@
 {
   "name": "fate",
-  "version": "0.7.1",
+  "version": "0.7.2",
   "license": "MIT",
   "description": "Futures, Promises and Deferreds. Closure-based implumentation of Promises/A+ spec.",
   "keywords": [ "future", "deferred", "promise", "promises", "promises-aplus", "promises/A+"],
